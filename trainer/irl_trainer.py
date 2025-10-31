@@ -36,7 +36,7 @@ class MaxEntIRL:
     def train(self, agent_env, model, num_epochs=50, batch_size=32, device='cuda:0'):
         for epoch in range(num_epochs):
             # 生成代理轨迹
-            agent_trajectories = self._generate_agent_trajectories(agent_env, model, batch_size=batch_size)
+            agent_trajectories = self._sample_trajectories(agent_env, model, batch_size=batch_size, device=device)
 
             # 计算专家和代理的奖励差异
             expert_rewards = self._calculate_rewards(self.expert_data, device)
@@ -51,15 +51,21 @@ class MaxEntIRL:
             self.optimizer.step()
             print(f"Train IRL Epoch {epoch + 1}/{num_epochs}, Loss: {loss.item():.4f}")
 
-    def _generate_agent_trajectories(self, env, model, batch_size):
+    def _sample_trajectories(self, env, model, batch_size, device):
         trajectories = []
         obs = env.reset()
+        # obs is now 1D flattened: [num_envs, obs_len]
+        # For DummyVecEnv, obs shape is [1, obs_len]
+        
+        # Determine num_stocks from action space
+        num_stocks = env.action_space.nvec[0]  # First dimension of MultiDiscrete action space
+        
         for _ in range(batch_size):
             action, _ = model.predict(obs)
             next_obs, reward, done, _ = env.step(action)
 
             # 转换为 Multi-Hot 编码
-            action_multi_hot = np.zeros(obs.shape[1])
+            action_multi_hot = np.zeros(num_stocks)
             for i in range(action.shape[1]):
                 action_multi_hot[action[:, i]] = 1
 
@@ -72,6 +78,12 @@ class MaxEntIRL:
     def _calculate_rewards(self, trajectories, device):
         rewards = []
         for state, action in trajectories:
+            # Handle different state shapes
+            if isinstance(state, np.ndarray):
+                # If state has shape [1, obs_len], squeeze to [obs_len]
+                if state.ndim > 1 and state.shape[0] == 1:
+                    state = state.squeeze(0)
+                # If state already has correct shape, keep as is
             state_tensor = torch.FloatTensor(state).to(device)
             action_tensor = torch.FloatTensor(action).to(device)
             reward = self.reward_net(state_tensor, action_tensor)
@@ -83,19 +95,26 @@ class MultiRewardNetwork(nn.Module):
     def __init__(self, input_dim, num_stocks, hidden_dim=64,
                  ind_yn=False, pos_yn=False, neg_yn=False):
         super().__init__()
+        self.num_stocks = num_stocks
+        self.input_dim = input_dim
+        
+        # Calculate dimensions for flattened format
+        # Observation: [ind_matrix, pos_matrix, neg_matrix, features]
+        # Each matrix is num_stocks x num_stocks, features is num_stocks x input_dim
         self.feature_dims = {
-            'base': input_dim,
-            'ind': num_stocks if ind_yn else 0,
-            'pos': num_stocks if pos_yn else 0,
-            'neg': num_stocks if neg_yn else 0
+            'ind': num_stocks * num_stocks if ind_yn else 0,
+            'pos': num_stocks * num_stocks if pos_yn else 0,
+            'neg': num_stocks * num_stocks if neg_yn else 0,
+            'base': num_stocks * input_dim  # Flattened features
         }
 
         # 动态构建编码器
         self.encoders = nn.ModuleDict()
         for feat, dim in self.feature_dims.items():
             if dim > 0:
+                # For flattened input, we process the entire flattened vector + action
                 self.encoders[feat] = nn.Sequential(
-                    nn.Linear(dim + 1, hidden_dim),  # +1 for action
+                    nn.Linear(dim + num_stocks, hidden_dim),  # +num_stocks for action (multi-hot)
                     nn.ReLU()
                 )
 
@@ -105,24 +124,33 @@ class MultiRewardNetwork(nn.Module):
         self.weights = nn.Parameter(torch.ones(self.num_rewards))
 
     def forward(self, state, action):
+        # state is flattened: [batch, obs_len] where obs_len = 3*num_stocks^2 + num_stocks*input_dim
+        # action is multi-hot: [batch, num_stocks]
+        
+        # Handle single sample case
+        if state.dim() == 1:
+            state = state.unsqueeze(0)
+        if action.dim() == 1:
+            action = action.unsqueeze(0)
+        
         # 分割特征
         ptr = 0
         features = {}
         for feat, dim in self.feature_dims.items():
             if dim > 0:
-                features[feat] = state[..., ptr:ptr + dim]
+                features[feat] = state[..., ptr:ptr + dim]  # [B, dim]
                 ptr += dim
 
         # 特征-动作融合
         rewards = []
         for i, (feat, data) in enumerate(features.items()):
-            action_exp = action.unsqueeze(-1)  # [B, N, 1]
-            fused = torch.cat([data.squeeze(), action_exp], dim=-1)
-            encoded = self.encoders[feat](fused).mean(dim=1)  # [B, H]
-            rewards.append(encoded.sum(dim=-1, keepdim=True))  # [B, 1]
+            # data: [B, dim], action: [B, num_stocks]
+            fused = torch.cat([data, action], dim=-1)  # [B, dim + num_stocks]
+            encoded = self.encoders[feat](fused)  # [B, hidden_dim]
+            rewards.append(encoded.mean(dim=-1, keepdim=True))  # [B, 1]
 
         # 加权奖励
-        weighted = sum(w * r for w, r in zip(F.softmax(self.weights), rewards))
+        weighted = sum(w * r for w, r in zip(F.softmax(self.weights, dim=0), rewards))
         return weighted
 
 
@@ -198,13 +226,10 @@ def train_model_and_predict(model, args, train_loader, val_loader, test_loader):
     )
 
     # --- 初始化IRL奖励网络 ---
-    obs_len = args.input_dim
-    if args.ind_yn:
-        obs_len += args.num_stocks
-    if args.pos_yn:
-        obs_len += args.num_stocks
-    if args.neg_yn:
-        obs_len += args.num_stocks
+    # With flattened observation format:
+    # obs_len = 3 * num_stocks^2 + num_stocks * input_dim
+    obs_len = 3 * args.num_stocks * args.num_stocks + args.num_stocks * args.input_dim
+    
     if not args.multi_reward:
         reward_net = RewardNetwork(input_dim=obs_len+1).to(args.device)
         irl_trainer = MaxEntIRL(reward_net, expert_trajectories, lr=1e-4)
@@ -220,7 +245,7 @@ def train_model_and_predict(model, args, train_loader, val_loader, test_loader):
     env_train = create_env_init(args, data_loader=train_loader)
     for i in range(args.max_epochs):
         # 1. 训练IRL奖励函数
-        irl_trainer.train(env_train, model, num_epochs=args.max_epochs,
+        irl_trainer.train(env_train, model, num_epochs=5,
                           batch_size=args.batch_size, device=args.device)  # 假设env_train是当前RL环境
         print("reward net train over.")
 

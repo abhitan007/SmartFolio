@@ -9,6 +9,7 @@ print(torch.cuda.is_available())
 from dataloader.data_loader import *
 from policy.policy import *
 # from trainer.trainer import *
+from stable_baselines3 import PPO
 from trainer.irl_trainer import *
 from torch_geometric.loader import DataLoader
 
@@ -43,8 +44,17 @@ def train_predict(args, predict_dt):
                     seed=args.seed,
                     device=args.device)
     elif args.policy == 'HGAT':
+        policy_kwargs = dict(
+            last_layer_dim_pi=args.num_stocks,  # Should equal num_stocks for proper initialization
+            last_layer_dim_vf=args.num_stocks,
+            n_head=8,
+            hidden_dim=128,
+            no_ind=(not args.ind_yn),
+            no_neg=(not args.neg_yn),
+        )
         model = PPO(policy=HGATActorCriticPolicy,
                     env=env_init,
+                    policy_kwargs=policy_kwargs,
                     **PPO_PARAMS,
                     seed=args.seed,
                     device=args.device)

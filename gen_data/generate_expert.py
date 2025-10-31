@@ -85,13 +85,25 @@ def generate_expert_trajectories(args, dataset, num_trajectories=100):
             correlation_matrix=correlation_matrix
         )
 
-        state = features.squeeze()
+        # Create flattened state to match the new observation format
+        # Format: [ind_matrix (flattened), pos_matrix (flattened), neg_matrix (flattened), features (flattened)]
+        state_parts = []
         if args.ind_yn:
-            state = np.concatenate([state, ind_matrix], axis=1)
+            state_parts.append(ind_matrix.flatten())
+        else:
+            state_parts.append(np.zeros(ind_matrix.size))
         if args.pos_yn:
-            state = np.concatenate([state, pos_matrix], axis=1)
+            state_parts.append(pos_matrix.flatten())
+        else:
+            state_parts.append(np.zeros(pos_matrix.size))
         if args.neg_yn:
-            state = np.concatenate([state, neg_matrix], axis=1)
+            state_parts.append(neg_matrix.flatten())
+        else:
+            state_parts.append(np.zeros(neg_matrix.size))
+        
+        state_parts.append(features.flatten())
+        state = np.concatenate(state_parts)
+        
         expert_trajectories.append((state, expert_actions))
     return expert_trajectories
 

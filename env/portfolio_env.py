@@ -47,16 +47,25 @@ class StockPortfolioEnv(gym.Env):
 
         # 部分可观测
         # 观测空间：股票特征及各个关系图
-        obs_len = args.input_dim
+        # HGAT expects flattened input: [ind_matrix, pos_matrix, neg_matrix, features]
+        obs_len = 0
         if self.ind_yn:
-            obs_len += self.num_stocks
+            obs_len += self.num_stocks * self.num_stocks  # Flattened industry matrix
+        else:
+            obs_len += self.num_stocks * self.num_stocks  # Zeros placeholder
         if self.pos_yn:
-            obs_len += self.num_stocks
+            obs_len += self.num_stocks * self.num_stocks  # Flattened momentum matrix
+        else:
+            obs_len += self.num_stocks * self.num_stocks  # Zeros placeholder
         if self.neg_yn:
-            obs_len += self.num_stocks
+            obs_len += self.num_stocks * self.num_stocks  # Flattened reversal matrix
+        else:
+            obs_len += self.num_stocks * self.num_stocks  # Zeros placeholder
+        obs_len += self.num_stocks * args.input_dim  # Flattened features
+        
         self.observation_space = spaces.Box(low=-np.inf,
                                             high=np.inf,
-                                            shape=(self.num_stocks, obs_len),
+                                            shape=(obs_len,),  # 1D flattened observation
                                             dtype=np.float32)
         self.mode = mode
         self.reward_net = reward_net  # 注入IRL奖励网络
@@ -66,19 +75,36 @@ class StockPortfolioEnv(gym.Env):
         # Stable-Baselines3 的 DummyVecEnv 需要将环境的观测值 (obs) 存储为 NumPy 数组
         if torch.isnan(self.features_tensor).any():
             print("nan！！！")
-        features = self.features_tensor[self.current_step].cpu().numpy()
+        features = self.features_tensor[self.current_step].cpu().numpy()  # [num_stocks, 6]
         corr_matrix = self.corr_tensor[self.current_step].cpu().numpy()
-        ind_matrix = self.ind_tensor[self.current_step].cpu().numpy()
-        pos_matrix = self.pos_tensor[self.current_step].cpu().numpy()
-        neg_matrix = self.neg_tensor[self.current_step].cpu().numpy()
-        obs = features
-        # obs = np.concatenate([features, corr_matrix], axis=1)
+        ind_matrix = self.ind_tensor[self.current_step].cpu().numpy()  # [num_stocks, num_stocks]
+        pos_matrix = self.pos_tensor[self.current_step].cpu().numpy()  # [num_stocks, num_stocks]
+        neg_matrix = self.neg_tensor[self.current_step].cpu().numpy()  # [num_stocks, num_stocks]
+        
+        # HGAT expects: [ind_matrix, pos_matrix, neg_matrix, features] all flattened and concatenated
+        # Reshape matrices to [num_stocks, num_stocks] and features to [num_stocks, 6]
+        # Then flatten in the correct order for HGAT
+        obs_parts = []
         if ind_yn:
-            obs = np.concatenate([obs, ind_matrix], axis=1)
+            obs_parts.append(ind_matrix.flatten())  # [num_stocks * num_stocks]
+        else:
+            obs_parts.append(np.zeros(self.num_stocks * self.num_stocks))
+            
         if pos_yn:
-            obs = np.concatenate([obs, pos_matrix], axis=1)
+            obs_parts.append(pos_matrix.flatten())  # [num_stocks * num_stocks]
+        else:
+            obs_parts.append(np.zeros(self.num_stocks * self.num_stocks))
+            
         if neg_yn:
-            obs = np.concatenate([obs, neg_matrix], axis=1)
+            obs_parts.append(neg_matrix.flatten())  # [num_stocks * num_stocks]
+        else:
+            obs_parts.append(np.zeros(self.num_stocks * self.num_stocks))
+        
+        obs_parts.append(features.flatten())  # [num_stocks * 6]
+        
+        # Concatenate all parts into single vector
+        obs = np.concatenate(obs_parts)  # Total: 3*num_stocks^2 + num_stocks*6
+        
         self.observation = obs
         self.ror = self.ror_batch[self.current_step].cpu()
 
@@ -125,7 +151,8 @@ class StockPortfolioEnv(gym.Env):
 
             # 使用IRL奖励函数替代原始奖励计算
             if self.reward_net is not None:
-                state_tensor = torch.FloatTensor(np.expand_dims(self.observation, 1)).to(self.device)  # 当前状态
+                # self.observation is already flattened [obs_len]
+                state_tensor = torch.FloatTensor(self.observation).to(self.device)  # 当前状态
                 # 将动作（权重向量）转换为 multi-hot 编码，输入奖励函数进行计算
                 action_multi_hot = np.zeros(self.num_stocks)
                 action_multi_hot[selected_indices] = 1

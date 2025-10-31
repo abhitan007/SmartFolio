@@ -34,7 +34,10 @@ class HGATNetwork(nn.Module):
         self.latent_dim_vf = last_layer_dim_vf
 
         self.num_stocks = last_layer_dim_pi
-        self.n_features = feature_dim - self.num_stocks * 2
+        # With flattened observation: feature_dim = 3*num_stocks^2 + num_stocks*6
+        # Solve for num_stocks: 3*n^2 + 6*n = feature_dim
+        # We can also just use last_layer_dim_pi which should equal num_stocks
+        self.n_features = 6  # Base features: close, open, high, low, prev_close, volume
 
         self.policy_net = HGAT(num_stocks=self.num_stocks, n_features=self.n_features,
                                num_heads=n_head, hidden_dim=hidden_dim,
@@ -66,6 +69,14 @@ class HGATActorCriticPolicy(ActorCriticPolicy):
                  *args,
                  **kwargs,
                  ):
+        # Extract HGAT-specific parameters before passing to parent
+        self.last_layer_dim_pi = kwargs.pop('last_layer_dim_pi', 64)
+        self.last_layer_dim_vf = kwargs.pop('last_layer_dim_vf', 64)
+        self.n_head = kwargs.pop('n_head', 8)
+        self.hidden_dim = kwargs.pop('hidden_dim', 128)
+        self.no_ind = kwargs.pop('no_ind', False)
+        self.no_neg = kwargs.pop('no_neg', False)
+        
         super(HGATActorCriticPolicy, self).__init__(
             observation_space,
             action_space,
@@ -80,10 +91,15 @@ class HGATActorCriticPolicy(ActorCriticPolicy):
         self.ortho_init = False
 
     def _build_mlp_extractor(self) -> None:
-        self.mlp_extractor = HGATNetwork(last_layer_dim_pi=self.action_space.shape[0],
-                                         last_layer_dim_vf=self.action_space.shape[0],
-                                         feature_dim=self.observation_space.shape[0],
-                                         )
+        self.mlp_extractor = HGATNetwork(
+            last_layer_dim_pi=self.last_layer_dim_pi,
+            last_layer_dim_vf=self.last_layer_dim_vf,
+            feature_dim=self.observation_space.shape[0],
+            n_head=self.n_head,
+            hidden_dim=self.hidden_dim,
+            no_ind=self.no_ind,
+            no_neg=self.no_neg,
+        )
 
     def forward(self, obs: th.Tensor, deterministic: bool = False) -> Tuple[th.Tensor, th.Tensor, th.Tensor]:
         actions, values, log_prob = super().forward(obs, deterministic)
