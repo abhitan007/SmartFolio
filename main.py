@@ -94,6 +94,7 @@ if __name__ == '__main__':
     args.pos_yn = True
     args.neg_yn = True
     args.multi_reward = True
+    args.use_ga_expert = True  # Use GA for expert generation (set False for original heuristic)
 
     if args.market == 'hs300':
         args.num_stocks = 102

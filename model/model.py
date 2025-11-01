@@ -142,7 +142,6 @@ class HGAT(nn.Module):
 
     def forward(self, inputs, require_weights=False):
         batch = inputs.shape[0]
-
         inputs = inputs.reshape(batch, -1, self.n_adj_mat)
         ind_adj = inputs[:, :self.n_adj_mat, :]
         pos_adj = inputs[:, self.n_adj_mat:self.n_adj_mat * 2, :]

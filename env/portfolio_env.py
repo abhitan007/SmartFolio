@@ -16,6 +16,7 @@ class StockPortfolioEnv(gym.Env):
         self.done = False
         self.reward = 0.0
         self.net_value = 1.0
+        self.peak_value = 1.0  # Track peak wealth for drawdown calculation
         self.net_value_s = [1.0]
         self.daily_return_s = [0.0]
         self.num_stocks = returns.shape[-1]
@@ -114,6 +115,7 @@ class StockPortfolioEnv(gym.Env):
         self.done = False
         self.reward = 0.0
         self.net_value = 1.0
+        self.peak_value = 1.0  # Reset peak value
         self.net_value_s = [1.0]
         self.daily_return_s = [0.0]
         self.load_observation(ind_yn=self.ind_yn, pos_yn=self.pos_yn, neg_yn=self.neg_yn)
@@ -157,12 +159,17 @@ class StockPortfolioEnv(gym.Env):
                 action_multi_hot = np.zeros(self.num_stocks)
                 action_multi_hot[selected_indices] = 1
                 action_tensor = torch.FloatTensor(action_multi_hot).to(self.device)  # 动作（权重向量）
+                
+                # Pass wealth information for drawdown calculation
+                wealth_info = torch.FloatTensor([self.net_value, self.peak_value]).to(self.device)
+                
                 with torch.no_grad():
-                    self.reward = self.reward_net(state_tensor, action_tensor).mean().cpu().item()
+                    self.reward = self.reward_net(state_tensor, action_tensor, wealth_info).mean().cpu().item()
             else:
                 self.reward = np.dot(weights, np.array(self.ror))
 
             self.net_value *= (1 + self.reward)
+            self.peak_value = max(self.peak_value, self.net_value)  # Update peak value
             self.daily_return_s.append(self.reward)
             self.net_value_s.append(self.net_value)
 

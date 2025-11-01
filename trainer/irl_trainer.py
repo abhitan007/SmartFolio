@@ -19,7 +19,8 @@ class RewardNetwork(nn.Module):
             nn.Linear(hidden_dim, 1)
         )
 
-    def forward(self, state, action):
+    def forward(self, state, action, wealth_info=None):
+        # wealth_info is ignored in this simple network (for compatibility)
         state = state.squeeze()
         action = action.unsqueeze(1)
         x = torch.cat([state, action], dim=1)
@@ -86,17 +87,24 @@ class MaxEntIRL:
                 # If state already has correct shape, keep as is
             state_tensor = torch.FloatTensor(state).to(device)
             action_tensor = torch.FloatTensor(action).to(device)
-            reward = self.reward_net(state_tensor, action_tensor)
+            
+            # For expert trajectories, we don't have wealth info, so pass None
+            # The reward network will handle this appropriately
+            reward = self.reward_net(state_tensor, action_tensor, wealth_info=None)
             rewards.append(reward)
         return torch.cat(rewards)
 
 
 class MultiRewardNetwork(nn.Module):
     def __init__(self, input_dim, num_stocks, hidden_dim=64,
-                 ind_yn=False, pos_yn=False, neg_yn=False):
+                 ind_yn=False, pos_yn=False, neg_yn=False,
+                 use_drawdown=True, dd_kappa=0.05, dd_tau=0.01):
         super().__init__()
         self.num_stocks = num_stocks
         self.input_dim = input_dim
+        self.use_drawdown = use_drawdown
+        self.dd_kappa = dd_kappa  # Ignore drawdowns below this threshold
+        self.dd_tau = dd_tau  # Smoothness parameter for SoftPlus
         
         # Calculate dimensions for flattened format
         # Observation: [ind_matrix, pos_matrix, neg_matrix, features]
@@ -118,20 +126,33 @@ class MultiRewardNetwork(nn.Module):
                     nn.ReLU()
                 )
 
+        # Drawdown penalty encoder
+        if self.use_drawdown:
+            self.dd_encoder = nn.Sequential(
+                nn.Linear(2, hidden_dim),  # Input: [W_current, W_peak]
+                nn.ReLU(),
+                nn.Linear(hidden_dim, 1)
+            )
+
         # 奖励权重参数
         active_feats = [k for k, v in self.feature_dims.items() if v > 0]
         self.num_rewards = len(active_feats)
+        if self.use_drawdown:
+            self.num_rewards += 1  # Add drawdown component
         self.weights = nn.Parameter(torch.ones(self.num_rewards))
 
-    def forward(self, state, action):
+    def forward(self, state, action, wealth_info=None):
         # state is flattened: [batch, obs_len] where obs_len = 3*num_stocks^2 + num_stocks*input_dim
         # action is multi-hot: [batch, num_stocks]
+        # wealth_info: [batch, 2] containing [W_current, W_peak]
         
         # Handle single sample case
         if state.dim() == 1:
             state = state.unsqueeze(0)
         if action.dim() == 1:
             action = action.unsqueeze(0)
+        if wealth_info is not None and wealth_info.dim() == 1:
+            wealth_info = wealth_info.unsqueeze(0)
         
         # 分割特征
         ptr = 0
@@ -148,6 +169,23 @@ class MultiRewardNetwork(nn.Module):
             fused = torch.cat([data, action], dim=-1)  # [B, dim + num_stocks]
             encoded = self.encoders[feat](fused)  # [B, hidden_dim]
             rewards.append(encoded.mean(dim=-1, keepdim=True))  # [B, 1]
+
+        # Drawdown penalty component
+        if self.use_drawdown and wealth_info is not None:
+            # wealth_info: [B, 2] = [W_current, W_peak]
+            W_current = wealth_info[:, 0:1]  # [B, 1]
+            W_peak = wealth_info[:, 1:2]  # [B, 1]
+            
+            # Calculate drawdown: dd = (W_peak - W_current) / max(W_peak, epsilon)
+            epsilon = 1e-8
+            dd = (W_peak - W_current) / torch.clamp(W_peak, min=epsilon)  # [B, 1]
+            
+            # Smooth penalty: -SoftPlus((dd - kappa) / tau)
+            # SoftPlus(x) = log(1 + exp(x)) ≈ smooth max(0, x)
+            dd_scaled = (dd - self.dd_kappa) / self.dd_tau
+            R_dd = -F.softplus(dd_scaled)  # [B, 1]
+            
+            rewards.append(R_dd)
 
         # 加权奖励
         weighted = sum(w * r for w, r in zip(F.softmax(self.weights, dim=0), rewards))
@@ -220,10 +258,28 @@ def model_predict(args, model, test_loader):
 
 def train_model_and_predict(model, args, train_loader, val_loader, test_loader):
     # --- 生成专家轨迹 ---
-    from gen_data.generate_expert import generate_expert_trajectories
-    expert_trajectories = generate_expert_trajectories(
-        args, train_loader.dataset, num_trajectories=10000
-    )
+    use_ga = getattr(args, 'use_ga_expert', True)  # Default to GA
+    
+    if use_ga:
+        print("\n" + "="*70)
+        print("Using GA-Enhanced Expert Generation")
+        print("="*70)
+        from gen_data.generate_expert_ga import generate_expert_trajectories_ga
+        expert_trajectories = generate_expert_trajectories_ga(
+            args, 
+            train_loader.dataset, 
+            num_trajectories=10000,
+            risk_category='mixed',  # Use all risk categories
+            ga_generations=30
+        )
+    else:
+        print("\n" + "="*70)
+        print("Using Original Heuristic Expert Generation")
+        print("="*70)
+        from gen_data.generate_expert import generate_expert_trajectories
+        expert_trajectories = generate_expert_trajectories(
+            args, train_loader.dataset, num_trajectories=10000
+        )
 
     # --- 初始化IRL奖励网络 ---
     # With flattened observation format:
@@ -244,13 +300,16 @@ def train_model_and_predict(model, args, train_loader, val_loader, test_loader):
     # --- train ---
     env_train = create_env_init(args, data_loader=train_loader)
     for i in range(args.max_epochs):
+        print(f"\n=== Epoch {i+1}/{args.max_epochs} ===")
         # 1. 训练IRL奖励函数
-        irl_trainer.train(env_train, model, num_epochs=5,
-                          batch_size=args.batch_size, device=args.device)  # 假设env_train是当前RL环境
+        irl_trainer.train(env_train, model, num_epochs=2,
+                          batch_size=args.batch_size, device=args.device)
         print("reward net train over.")
 
-        # 2. 更新RL环境使用新奖励函数
+        # 2. 更新RL环境使用新奖励函数 - 只用第一个batch
         for batch_idx, data in enumerate(train_loader):
+            if batch_idx > 0:  # Only process first batch
+                break
             corr, ts_features, features, ind, pos, neg, labels, pyg_data, mask = process_data(data, device=args.device)
             env_train = StockPortfolioEnv(
                 args=args, corr=corr, ts_features=ts_features, features=features,
@@ -261,11 +320,16 @@ def train_model_and_predict(model, args, train_loader, val_loader, test_loader):
             env_train.seed(seed=args.seed)
             env_train, _ = env_train.get_sb_env()
             model.set_env(env_train)
-
+            timesteps = 500
             # 3. 训练RL代理
-            trained_model = model.learn(total_timesteps=10000)
+            print(f"Training RL agent for {timesteps} timesteps...")
+            trained_model = model.learn(total_timesteps=timesteps)
             # 评估训练后的模型
+            print("Evaluating policy...")
             mean_reward, std_reward = evaluate_policy(model, env_train, n_eval_episodes=1)
             print(f"平均奖励: {mean_reward}")
-            model_predict(args, trained_model, test_loader)
-        return trained_model
+    
+    # Final evaluation on test set
+    print("\n=== Final Test Evaluation ===")
+    model_predict(args, model, test_loader)
+    return model
