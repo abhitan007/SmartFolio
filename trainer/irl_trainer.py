@@ -271,11 +271,11 @@ def create_env_init(args, dataset=None, data_loader=None):
 
 
 PPO_PARAMS = {
-        "n_steps": 128,  # Reduced from 1024 to prevent OOM with large obs space
+        "n_steps": 1024,  # Reduced from 1024 to prevent OOM with large obs space
         "ent_coef": 0.005,
         "learning_rate": 1e-4,
         "batch_size": 64,  # Reduced from 128 to match n_steps/2
-        "gamma": 0.5,
+        "gamma": 0.99,
         "tensorboard_log": "./logs",
     }
 
