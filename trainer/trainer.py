@@ -6,7 +6,13 @@ import torch.nn.functional as F
 from torch_geometric.data import DataLoader
 from stable_baselines3 import PPO
 from stable_baselines3.common.evaluation import evaluate_policy
+
 from env.portfolio_env import *
+from trainer.evaluation_utils import (
+    aggregate_metric_records,
+    create_metric_record,
+    persist_metrics,
+)
 
 def mse_loss(logits, targets):
     mse = nn.MSELoss()
@@ -126,23 +132,55 @@ def train_and_predict(args, train_loader, test_loader):
         return trained_model
 
 
-def model_predict(args, model, test_loader):
-    # 读取指数 benchmark 数据，用于计算信息系数 IR
+def model_predict(args, model, test_loader, split: str = "test"):
+    """Run inference against the test loader and persist evaluation artefacts."""
+
     df_benchmark = pd.read_csv(f"../dataset/index_data/{args.market}_index.csv")
     df_benchmark = df_benchmark[(df_benchmark['date'] >= args.test_start_date) &
                                 (df_benchmark['date'] <= args.test_end_date)]
     benchmark_return = df_benchmark['return']
+
+    records = []
+    env_snapshots = []
+
     for batch_idx, data in enumerate(test_loader):
         corr, ts_features, features, labels, pyg_data, mask = process_data(data, device=args.device)
         env_test = StockPortfolioEnv(args, corr, ts_features, features, labels, pyg_data, benchmark_return,
                                      mode="test")
-        env_test, obs_test = env_test.get_sb_env()
-        env_test.reset()
+        env_vec, obs_test = env_test.get_sb_env()
+        env_vec.reset()
         max_step = len(labels)
-        for i in range(max_step):
+
+        for _ in range(max_step):
             action, _states = model.predict(obs_test)
-            obs_test, rewards, dones, info = env_test.step(action)
+            obs_test, rewards, dones, info = env_vec.step(action)
             if dones[0]:
-                print("测试结束！")
                 break
+
+        env_instance = env_vec.envs[0]
+        arr, avol, sharpe, mdd, cr, ir = env_instance.evaluate()
+        metrics = {
+            "arr": arr,
+            "avol": avol,
+            "sharpe": sharpe,
+            "mdd": mdd,
+            "cr": cr,
+            "ir": ir,
+        }
+        record = create_metric_record(args, split, metrics, batch_idx)
+        records.append(record)
+        env_snapshots.append((env_instance, record["run_id"]))
+        env_vec.close()
+
+    log_info = persist_metrics(records, env_snapshots, args, split)
+    summary = aggregate_metric_records(records)
+
+    if summary:
+        print(f"Evaluation summary for split='{split}': {summary}")
+
+    return {
+        "records": records,
+        "summary": summary,
+        "log": log_info,
+    }
 

@@ -86,6 +86,12 @@ if __name__ == '__main__':
     parser.add_argument("--reward_net_path", default=None, help="Path to saved IRL reward network state_dict to resume from")
     parser.add_argument("--fine_tune_steps", type=int, default=5000, help="Timesteps for monthly fine-tuning when resuming")
     parser.add_argument("--save_dir", default="./checkpoints", help="Directory to save trained models")
+    parser.add_argument("--baseline_checkpoint", default="./checkpoints/baseline.zip",
+                        help="Destination checkpoint promoted after passing gating criteria")
+    parser.add_argument("--promotion_min_sharpe", type=float, default=0.5,
+                        help="Minimum Sharpe ratio required to promote a fine-tuned checkpoint")
+    parser.add_argument("--promotion_max_drawdown", type=float, default=0.2,
+                        help="Maximum acceptable drawdown (absolute fraction, e.g. 0.2 for 20%) for promotion")
     # Training hyperparameters
     parser.add_argument("--irl_epochs", type=int, default=50, help="Number of IRL training epochs")
     parser.add_argument("--rl_timesteps", type=int, default=10000, help="Number of RL timesteps for training")

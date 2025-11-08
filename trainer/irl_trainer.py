@@ -9,6 +9,12 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from torch_geometric.data import DataLoader
 
 from env.portfolio_env import *
+from trainer.evaluation_utils import (
+    aggregate_metric_records,
+    apply_promotion_gate,
+    create_metric_record,
+    persist_metrics,
+)
 
 
 class RewardNetwork(nn.Module):
@@ -280,26 +286,59 @@ PPO_PARAMS = {
     }
 
 
-def model_predict(args, model, test_loader):
-    # 读取指数 benchmark 数据，用于计算信息系数 IR
+def model_predict(args, model, test_loader, split: str = "test"):
+    """Evaluate a model on the provided loader and persist metrics."""
+
     df_benchmark = pd.read_csv(f"./dataset/index_data/{args.market}_index.csv")
     df_benchmark = df_benchmark[(df_benchmark['datetime'] >= args.test_start_date) &
                                 (df_benchmark['datetime'] <= args.test_end_date)]
     benchmark_return = df_benchmark['daily_return']
+
+    records = []
+    env_snapshots = []
+
     for batch_idx, data in enumerate(test_loader):
         corr, ts_features, features, ind, pos, neg, labels, pyg_data, mask = process_data(data, device=args.device)
         env_test = StockPortfolioEnv(args=args, corr=corr, ts_features=ts_features, features=features,
                                      ind=ind, pos=pos, neg=neg,
                                      returns=labels, pyg_data=pyg_data, benchmark_return=benchmark_return,
                                      mode="test", ind_yn=args.ind_yn, pos_yn=args.pos_yn, neg_yn=args.neg_yn)
-        env_test, obs_test = env_test.get_sb_env()
-        env_test.reset()
+        env_vec, obs_test = env_test.get_sb_env()
+        env_vec.reset()
         max_step = len(labels)
-        for i in range(max_step):
+
+        for _ in range(max_step):
             action, _states = model.predict(obs_test)
-            obs_test, rewards, dones, info = env_test.step(action)
+            obs_test, rewards, dones, info = env_vec.step(action)
             if dones[0]:
                 break
+
+        env_instance = env_vec.envs[0]
+        arr, avol, sharpe, mdd, cr, ir = env_instance.evaluate()
+        metrics = {
+            "arr": arr,
+            "avol": avol,
+            "sharpe": sharpe,
+            "mdd": mdd,
+            "cr": cr,
+            "ir": ir,
+        }
+        record = create_metric_record(args, split, metrics, batch_idx)
+        records.append(record)
+        env_snapshots.append((env_instance, record["run_id"]))
+        env_vec.close()
+
+    log_info = persist_metrics(records, env_snapshots, args, split)
+    summary = aggregate_metric_records(records)
+
+    if summary:
+        print(f"Evaluation summary for split='{split}': {summary}")
+
+    return {
+        "records": records,
+        "summary": summary,
+        "log": log_info,
+    }
 
 
 def train_model_and_predict(model, args, train_loader, val_loader, test_loader):
@@ -398,7 +437,7 @@ def train_model_and_predict(model, args, train_loader, val_loader, test_loader):
 
         # 4. Intermediate test evaluation to print ARR/AVOL/Sharpe/MDD/CR/IR
         print("\n=== Intermediate Test Evaluation (after RL learn) ===")
-        model_predict(args, model, test_loader)
+        model_predict(args, model, test_loader, split=f"epoch{i+1}_test")
     # Save reward network checkpoint
     try:
         save_dir = getattr(args, 'save_dir', './checkpoints')
@@ -412,17 +451,21 @@ def train_model_and_predict(model, args, train_loader, val_loader, test_loader):
 
     # Final evaluation on test set
     print("\n=== Final Test Evaluation ===")
-    model_predict(args, model, test_loader)
-    
-    # Save PPO model checkpoint at the end of training
+    final_eval = model_predict(args, model, test_loader, split="final_test")
+
+    candidate_path = None
     try:
         save_dir = getattr(args, 'save_dir', './checkpoints')
         os.makedirs(save_dir, exist_ok=True)
         ts = pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')
         policy_name = getattr(args, 'policy', 'policy').lower()
-        ckpt_path = os.path.join(save_dir, f"ppo_{policy_name}_{args.market}_{ts}.zip")
-        model.save(ckpt_path)
-        print(f"Saved PPO model checkpoint to {ckpt_path}")
+        candidate_path = os.path.join(save_dir, f"ppo_{policy_name}_{args.market}_{ts}.zip")
+        model.save(candidate_path)
+        print(f"Saved PPO model checkpoint to {candidate_path}")
     except Exception as e:
         print(f"Warning: could not save PPO model: {e}")
+
+    apply_promotion_gate(args, candidate_path, final_eval.get("summary"), final_eval.get("log"))
+
     return model
+
