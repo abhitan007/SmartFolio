@@ -1,0 +1,44 @@
+{
+  "model_path": "./checkpoints/ppo_hgat_custom_20251125_140542",
+  "dataset_dir": "/Users/manthanbagade/Desktop/projects/Inter/SmartFolio/dataset_default/data_train_predict_custom/1_hy",
+  "market": "custom",
+  "num_stocks": 97,
+  "input_dim": 6,
+  "global_r2": 0.05269363976602242,
+  "top_indices": [
+    44,
+    3,
+    17,
+    37,
+    38,
+    31,
+    55,
+    30,
+    51,
+    65
+  ],
+  "avg_weights": [
+    0.01640576310455799,
+    0.016092514619231224,
+    0.015290791168808937,
+    0.015053226612508297,
+    0.014732008799910545,
+    0.014623449184000492,
+    0.014310570433735847,
+    0.013903867453336716,
+    0.013819698244333267,
+    0.013780457898974419
+  ],
+  "top_tickers": [
+    "POONAWALLA.NS",
+    "ICICIBANK.NS",
+    "M&M.NS",
+    "PIDILITIND.NS",
+    "INDIGO.NS",
+    "HEROMOTOCO.NS",
+    "LUPIN.NS",
+    "TECHM.NS",
+    "MRF.NS",
+    "COFORGE.NS"
+  ]
+}

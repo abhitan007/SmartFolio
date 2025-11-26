@@ -1,0 +1,300 @@
+{
+  "system_instruction": "\nYou are a Senior Portfolio Analyst for SmartFolio. Your goal is to explain the \"Why\" behind the AI's trading decisions to a client.\n\n### Input Data\nYou will receive a set of decision rules derived from a Surrogate Decision Tree. \nBecause the system has already mapped technical indices to names, your input will look like this:\n- **Target**: LUPIN.NS\n- **Rule**: If AARTIIND.NS (Volume) > 4.88 AND BATAINDIA.NS (Close) <= 4.18 -> Weight: 14%\n\n### Your Task\nTranslate these structured rules into a qualitative financial narrative.\n\n### Guidelines\n1.  **Interpret the Signals**:\n    - \"Volume\" > High Threshold implies high market activity or potential breakout.\n    - \"Prev_Close\" or \"Momentum\" > High Threshold implies trend following.\n    - \"Close\" < Low Threshold might imply \"buy the dip\" or mean reversion.\n    \n2.  **Identify Relationships**:\n    - If the rule for buying Stock A depends on Stock B (e.g., buying LUPIN based on AARTIIND's volume), describe this as a **Cross-Market Signal**.\n    - Explain *why* the model might be doing this (e.g., \"Sector rotation,\" \"Supply chain correlation,\" or \"Risk-off sentiment\").\n\n3.  **Tone**: Professional, insightful, and data-driven, but accessible. Avoid raw tree output syntax (like `|---`).\n\n### Output Structure\nProduce a Markdown report with these sections:\n\n#### 1. Executive Summary\nA single sentence summary of the position's primary driver.\n*(Example: \"The heavy allocation to Lupin is driven by a volume breakout in the Chemicals sector, specifically tracking Aarti Industries.\")*\n\n#### 2. Key Drivers\n- **Primary Signal**: The most critical condition (top of the tree).\n- **Context**: Secondary conditions that confirm the trade.\n\n#### 3. Market Narrative\nWeave the rules into a short story. \n*(Example: \"The model adopts a 'Momentum' stance on Lupin. It waits for high activity in peer stocks (Aarti Ind) but requires Bata India to remain stable/low, effectively hedging against broader consumer volatility.\")*\n",
+  "metadata": {
+    "model_path": "explainability_results/explain_tree_custom.joblib",
+    "included_keys": [
+      "per_stock",
+      "avg_weights",
+      "top_indices",
+      "global_r2",
+      "X_shape",
+      "Y_shape"
+    ]
+  },
+  "instructions": "You are given structured JSON data summarizing decision-tree surrogates that approximate an RL allocation model. For each stock (in `per_stock`), generate a clear, technical summary covering these six points in the same order:\n\n1. Model Fit (R\u00b2): State the numeric R\u00b2 and qualitatively rate the fit as good (\u22650.65), decent (0.45\u20130.65), or poor (<0.45).\n2. Average Allocation: Report the agent\u2019s average portfolio weight.\n3. Key Drivers: List top 2\u20134 features by importance percentage from `feature_importances`.\n4. High Allocation Logic: Interpret the conditions in `rules` that yield the highest allocation value.\n5. Secondary/Moderate Logic: Summarize alternative paths that produce mid-range weights.\n6. Low Allocation Logic: Describe conditions that lead to the lowest or zero allocation.\n\nRules:\n- No emojis or decorative language.\n- Output must be structured exactly as the example block format.\n- Be concise but specific in interpreting thresholds.\n- Avoid restating JSON keys; translate them into human analysis.\n",
+  "example_output": "Example format:\n\nICICIBANK.NS (Stock 3)\n    Model Fit (R\u00b2): 0.597 \u2192 decent fit\n    Average Allocation: 0.0119\n    Key Drivers: Stock[76]::Feature_5 (21.9%), Stock[55]::Feature_2 (18.1%), Stock[81]::Feature_3 (17.3%)\n    High Allocation Logic: High weight (0.09) when Stock[55]::Feature_2 > 6.12\n    Secondary Logic: Moderate allocation (0.08) under other high feature paths\n    Low Allocation Logic: Lowest (0.01) when these features are low\n\n",
+  "explainability_data": {
+    "per_stock": {
+      "44": {
+        "ticker": "POONAWALLA.NS",
+        "avg_weight": 0.01640576310455799,
+        "r2": 0.5507795837286699,
+        "feature_importances": {
+          "Stock[32]::Feature_5": 0.3603261487845778,
+          "Stock[9]::Feature_5": 0.2985436783913376,
+          "Stock[35]::Feature_2": 0.14411354280920366,
+          "Stock[46]::Feature_5": 0.10076075803876787,
+          "Stock[89]::Feature_5": 0.09625587197611296
+        },
+        "rules": "|--- Stock[32]::Feature_5 <= -0.47\n|   |--- value: [0.16]\n|--- Stock[32]::Feature_5 >  -0.47\n|   |--- Stock[9]::Feature_5 <= 3.35\n|   |   |--- Stock[35]::Feature_2 <= 2.28\n|   |   |   |--- Stock[46]::Feature_5 <= 5.40\n|   |   |   |   |--- Stock[89]::Feature_5 <= 2.77\n|   |   |   |   |   |--- value: [0.01]\n|   |   |   |   |--- Stock[89]::Feature_5 >  2.77\n|   |   |   |   |   |--- value: [0.07]\n|   |   |   |--- Stock[46]::Feature_5 >  5.40\n|   |   |   |   |--- value: [0.09]\n|   |   |--- Stock[35]::Feature_2 >  2.28\n|   |   |   |--- value: [0.11]\n|   |--- Stock[9]::Feature_5 >  3.35\n|   |   |--- value: [0.15]\n"
+      },
+      "3": {
+        "ticker": "ICICIBANK.NS",
+        "avg_weight": 0.016092514619231224,
+        "r2": 0.5004273814551394,
+        "feature_importances": {
+          "Stock[55]::Feature_0": 0.21703266619827327,
+          "Stock[13]::Feature_4": 0.15586440372219773,
+          "Stock[52]::Feature_1": 0.15400349395865137,
+          "Stock[92]::Feature_5": 0.1302700720335457,
+          "Stock[56]::Feature_2": 0.09695700060372356,
+          "Stock[67]::Feature_5": 0.08552670002350034,
+          "Reversal[67,6]": 0.06524992806257403,
+          "Stock[23]::Feature_5": 0.05699670359504117,
+          "Stock[36]::Feature_4": 0.02429438926370372,
+          "Stock[38]::Feature_4": 0.010423828361976556
+        },
+        "rules": "|--- Stock[55]::Feature_0 <= 6.15\n|   |--- Stock[52]::Feature_1 <= 0.88\n|   |   |--- Stock[92]::Feature_5 <= -1.12\n|   |   |   |--- Stock[13]::Feature_4 <= -0.54\n|   |   |   |   |--- Stock[36]::Feature_4 <= -0.26\n|   |   |   |   |   |--- value: [0.11]\n|   |   |   |   |--- Stock[36]::Feature_4 >  -0.26\n|   |   |   |   |   |--- value: [0.07]\n|   |   |   |--- Stock[13]::Feature_4 >  -0.54\n|   |   |   |   |--- Stock[38]::Feature_4 <= 1.45\n|   |   |   |   |   |--- value: [0.01]\n|   |   |   |   |--- Stock[38]::Feature_4 >  1.45\n|   |   |   |   |   |--- value: [0.03]\n|   |   |--- Stock[92]::Feature_5 >  -1.12\n|   |   |   |--- Stock[56]::Feature_2 <= 2.55\n|   |   |   |   |--- Stock[67]::Feature_5 <= 1.00\n|   |   |   |   |   |--- value: [0.01]\n|   |   |   |   |--- Stock[67]::Feature_5 >  1.00\n|   |   |   |   |   |--- value: [0.05]\n|   |   |   |--- Stock[56]::Feature_2 >  2.55\n|   |   |   |   |--- Stock[23]::Feature_5 <= -0.45\n|   |   |   |   |   |--- value: [0.06]\n|   |   |   |   |--- Stock[23]::Feature_5 >  -0.45\n|   |   |   |   |   |--- value: [0.02]\n|   |--- Stock[52]::Feature_1 >  0.88\n|   |   |--- Reversal[67,6] <= 0.50\n|   |   |   |--- value: [0.02]\n|   |   |--- Reversal[67,6] >  0.50\n|   |   |   |--- Stock[72]::Feature_2 <= -0.83\n|   |   |   |   |--- value: [0.08]\n|   |   |   |--- Stock[72]::Feature_2 >  -0.83\n|   |   |   |   |--- value: [0.10]\n|--- Stock[55]::Feature_0 >  6.15\n|   |--- value: [0.12]\n"
+      },
+      "17": {
+        "ticker": "M&M.NS",
+        "avg_weight": 0.015290791168808937,
+        "r2": 0.581465225312807,
+        "feature_importances": {
+          "Stock[39]::Feature_3": 0.5957142387272015,
+          "Stock[53]::Feature_2": 0.10524827074092508,
+          "Stock[67]::Feature_5": 0.10240274899101612,
+          "Stock[95]::Feature_5": 0.08121119967823275,
+          "Stock[40]::Feature_1": 0.07476135909335421,
+          "Stock[74]::Feature_0": 0.03143051293295681,
+          "Stock[86]::Feature_3": 0.006227201607178705,
+          "Stock[0]::Feature_1": 0.0030044682291348705
+        },
+        "rules": "|--- Stock[39]::Feature_3 <= 0.91\n|   |--- Stock[53]::Feature_2 <= -0.24\n|   |   |--- Stock[67]::Feature_5 <= -1.05\n|   |   |   |--- Stock[0]::Feature_1 <= -0.50\n|   |   |   |   |--- value: [0.06]\n|   |   |   |--- Stock[0]::Feature_1 >  -0.50\n|   |   |   |   |--- value: [0.08]\n|   |   |--- Stock[67]::Feature_5 >  -1.05\n|   |   |   |--- Stock[95]::Feature_5 <= 4.19\n|   |   |   |   |--- Stock[40]::Feature_1 <= 0.43\n|   |   |   |   |   |--- value: [0.01]\n|   |   |   |   |--- Stock[40]::Feature_1 >  0.43\n|   |   |   |   |   |--- value: [0.04]\n|   |   |   |--- Stock[95]::Feature_5 >  4.19\n|   |   |   |   |--- Stock[74]::Feature_0 <= -0.04\n|   |   |   |   |   |--- value: [0.02]\n|   |   |   |   |--- Stock[74]::Feature_0 >  -0.04\n|   |   |   |   |   |--- value: [0.07]\n|   |--- Stock[53]::Feature_2 >  -0.24\n|   |   |--- Stock[86]::Feature_3 <= -0.12\n|   |   |   |--- value: [0.06]\n|   |   |--- Stock[86]::Feature_3 >  -0.12\n|   |   |   |--- value: [0.08]\n|--- Stock[39]::Feature_3 >  0.91\n|   |--- value: [0.20]\n"
+      },
+      "37": {
+        "ticker": "PIDILITIND.NS",
+        "avg_weight": 0.015053226612508297,
+        "r2": 0.6715755212918355,
+        "feature_importances": {
+          "Stock[13]::Feature_2": 0.2328487546622574,
+          "Stock[22]::Feature_5": 0.219567829351946,
+          "Stock[45]::Feature_5": 0.18240806175642316,
+          "Stock[67]::Feature_4": 0.12680785809235465,
+          "Stock[56]::Feature_3": 0.10342870217246078,
+          "Stock[77]::Feature_0": 0.09085834999159509,
+          "Stock[0]::Feature_5": 0.044080443972963054
+        },
+        "rules": "|--- Stock[22]::Feature_5 <= 2.54\n|   |--- Stock[45]::Feature_5 <= 4.42\n|   |   |--- Stock[67]::Feature_4 <= 3.17\n|   |   |   |--- Stock[77]::Feature_0 <= 0.51\n|   |   |   |   |--- Stock[0]::Feature_5 <= -0.57\n|   |   |   |   |   |--- value: [0.03]\n|   |   |   |   |--- Stock[0]::Feature_5 >  -0.57\n|   |   |   |   |   |--- value: [0.01]\n|   |   |   |--- Stock[77]::Feature_0 >  0.51\n|   |   |   |   |--- Stock[56]::Feature_3 <= 0.02\n|   |   |   |   |   |--- value: [0.02]\n|   |   |   |   |--- Stock[56]::Feature_3 >  0.02\n|   |   |   |   |   |--- value: [0.05]\n|   |   |--- Stock[67]::Feature_4 >  3.17\n|   |   |   |--- value: [0.11]\n|   |--- Stock[45]::Feature_5 >  4.42\n|   |   |--- Stock[13]::Feature_2 <= -0.44\n|   |   |   |--- value: [0.00]\n|   |   |--- Stock[13]::Feature_2 >  -0.44\n|   |   |   |--- value: [0.18]\n|--- Stock[22]::Feature_5 >  2.54\n|   |--- value: [0.14]\n"
+      },
+      "38": {
+        "ticker": "INDIGO.NS",
+        "avg_weight": 0.014732008799910545,
+        "r2": 0.6963977958317504,
+        "feature_importances": {
+          "Stock[63]::Feature_5": 0.6626184162971258,
+          "Stock[53]::Feature_5": 0.0920048567570955,
+          "Stock[94]::Feature_5": 0.0726789873408498,
+          "Stock[17]::Feature_1": 0.06817707540283398,
+          "Stock[27]::Feature_3": 0.0372175655570142,
+          "Stock[22]::Feature_5": 0.03404253183580002,
+          "Stock[94]::Feature_2": 0.020802097475569156,
+          "Stock[67]::Feature_3": 0.00592842532280663,
+          "Stock[48]::Feature_0": 0.004868162805847442,
+          "Stock[49]::Feature_0": 0.0015125678943166045
+        },
+        "rules": "|--- Stock[63]::Feature_5 <= 4.67\n|   |--- Stock[53]::Feature_5 <= -1.30\n|   |   |--- Stock[94]::Feature_2 <= -0.20\n|   |   |   |--- Stock[49]::Feature_0 <= -0.11\n|   |   |   |   |--- value: [0.02]\n|   |   |   |--- Stock[49]::Feature_0 >  -0.11\n|   |   |   |   |--- value: [0.04]\n|   |   |--- Stock[94]::Feature_2 >  -0.20\n|   |   |   |--- Stock[67]::Feature_3 <= 2.48\n|   |   |   |   |--- Stock[39]::Feature_0 <= -0.99\n|   |   |   |   |   |--- value: [0.05]\n|   |   |   |   |--- Stock[39]::Feature_0 >  -0.99\n|   |   |   |   |   |--- value: [0.06]\n|   |   |   |--- Stock[67]::Feature_3 >  2.48\n|   |   |   |   |--- value: [0.08]\n|   |--- Stock[53]::Feature_5 >  -1.30\n|   |   |--- Stock[94]::Feature_5 <= -0.61\n|   |   |   |--- Stock[27]::Feature_3 <= 0.59\n|   |   |   |   |--- Stock[48]::Feature_0 <= -0.18\n|   |   |   |   |   |--- value: [0.06]\n|   |   |   |   |--- Stock[48]::Feature_0 >  -0.18\n|   |   |   |   |   |--- value: [0.09]\n|   |   |   |--- Stock[27]::Feature_3 >  0.59\n|   |   |   |   |--- value: [0.01]\n|   |   |--- Stock[94]::Feature_5 >  -0.61\n|   |   |   |--- Stock[17]::Feature_1 <= -0.86\n|   |   |   |   |--- value: [0.08]\n|   |   |   |--- Stock[17]::Feature_1 >  -0.86\n|   |   |   |   |--- Stock[22]::Feature_5 <= -0.54\n|   |   |   |   |   |--- value: [0.03]\n|   |   |   |   |--- Stock[22]::Feature_5 >  -0.54\n|   |   |   |   |   |--- value: [0.01]\n|--- Stock[63]::Feature_5 >  4.67\n|   |--- value: [0.22]\n"
+      },
+      "31": {
+        "ticker": "HEROMOTOCO.NS",
+        "avg_weight": 0.014623449184000492,
+        "r2": 0.6536135509704362,
+        "feature_importances": {
+          "Stock[82]::Feature_5": 0.3201678335714503,
+          "Stock[21]::Feature_3": 0.24347407139254262,
+          "Stock[52]::Feature_5": 0.1795835163307037,
+          "Stock[78]::Feature_5": 0.08072611541026653,
+          "Stock[74]::Feature_4": 0.0683315742187856,
+          "Stock[36]::Feature_3": 0.051000435057923066,
+          "Stock[17]::Feature_4": 0.049638086529082893,
+          "Stock[53]::Feature_3": 0.007078367489245296
+        },
+        "rules": "|--- Stock[82]::Feature_5 <= -0.08\n|   |--- Stock[52]::Feature_5 <= -0.46\n|   |   |--- value: [0.13]\n|   |--- Stock[52]::Feature_5 >  -0.46\n|   |   |--- Stock[78]::Feature_5 <= 4.90\n|   |   |   |--- Stock[74]::Feature_4 <= -0.34\n|   |   |   |   |--- Stock[53]::Feature_3 <= -0.99\n|   |   |   |   |   |--- value: [0.07]\n|   |   |   |   |--- Stock[53]::Feature_3 >  -0.99\n|   |   |   |   |   |--- value: [0.04]\n|   |   |   |--- Stock[74]::Feature_4 >  -0.34\n|   |   |   |   |--- Stock[36]::Feature_3 <= 1.06\n|   |   |   |   |   |--- value: [0.01]\n|   |   |   |   |--- Stock[36]::Feature_3 >  1.06\n|   |   |   |   |   |--- value: [0.06]\n|   |   |--- Stock[78]::Feature_5 >  4.90\n|   |   |   |--- value: [0.09]\n|--- Stock[82]::Feature_5 >  -0.08\n|   |--- Stock[21]::Feature_3 <= -0.27\n|   |   |--- value: [0.21]\n|   |--- Stock[21]::Feature_3 >  -0.27\n|   |   |--- Stock[17]::Feature_4 <= -0.47\n|   |   |   |--- value: [0.09]\n|   |   |--- Stock[17]::Feature_4 >  -0.47\n|   |   |   |--- value: [0.01]\n"
+      },
+      "55": {
+        "ticker": "LUPIN.NS",
+        "avg_weight": 0.014310570433735847,
+        "r2": 0.5828471212760931,
+        "feature_importances": {
+          "Stock[75]::Feature_5": 0.30003108228044756,
+          "Stock[75]::Feature_4": 0.24079981874191078,
+          "Stock[88]::Feature_5": 0.16887786150131745,
+          "Stock[82]::Feature_3": 0.12930752220699582,
+          "Stock[94]::Feature_0": 0.07639147042647512,
+          "Stock[35]::Feature_5": 0.05814472533571736,
+          "Stock[28]::Feature_0": 0.02594959326833144,
+          "Stock[46]::Feature_5": 0.000497926238804451
+        },
+        "rules": "|--- Stock[75]::Feature_5 <= 4.88\n|   |--- Stock[75]::Feature_4 <= -0.32\n|   |   |--- value: [0.12]\n|   |--- Stock[75]::Feature_4 >  -0.32\n|   |   |--- Stock[88]::Feature_5 <= 4.19\n|   |   |   |--- Stock[94]::Feature_0 <= -0.44\n|   |   |   |   |--- value: [0.07]\n|   |   |   |--- Stock[94]::Feature_0 >  -0.44\n|   |   |   |   |--- Stock[35]::Feature_5 <= -0.71\n|   |   |   |   |   |--- value: [0.03]\n|   |   |   |   |--- Stock[35]::Feature_5 >  -0.71\n|   |   |   |   |   |--- value: [0.01]\n|   |   |--- Stock[88]::Feature_5 >  4.19\n|   |   |   |--- Stock[82]::Feature_3 <= 0.25\n|   |   |   |   |--- Stock[46]::Feature_5 <= 1.55\n|   |   |   |   |   |--- value: [0.01]\n|   |   |   |   |--- Stock[46]::Feature_5 >  1.55\n|   |   |   |   |   |--- value: [0.00]\n|   |   |   |--- Stock[82]::Feature_3 >  0.25\n|   |   |   |   |--- Stock[28]::Feature_0 <= 0.56\n|   |   |   |   |   |--- value: [0.06]\n|   |   |   |   |--- Stock[28]::Feature_0 >  0.56\n|   |   |   |   |   |--- value: [0.09]\n|--- Stock[75]::Feature_5 >  4.88\n|   |--- value: [0.14]\n"
+      },
+      "30": {
+        "ticker": "TECHM.NS",
+        "avg_weight": 0.013903867453336716,
+        "r2": 0.5755470987880434,
+        "feature_importances": {
+          "Stock[68]::Feature_5": 0.37391635508892174,
+          "Stock[72]::Feature_5": 0.19169004691559713,
+          "Stock[13]::Feature_2": 0.16327928810008474,
+          "Stock[71]::Feature_1": 0.10441932802727502,
+          "Stock[74]::Feature_1": 0.07835896523864253,
+          "Reversal[67,11]": 0.047886877962513855,
+          "Momentum[19,71]": 0.027348356441119933,
+          "Stock[57]::Feature_3": 0.013100782225844983
+        },
+        "rules": "|--- Stock[68]::Feature_5 <= -0.88\n|   |--- value: [0.14]\n|--- Stock[68]::Feature_5 >  -0.88\n|   |--- Stock[72]::Feature_5 <= 3.38\n|   |   |--- Stock[13]::Feature_2 <= -0.95\n|   |   |   |--- Reversal[67,11] <= 0.50\n|   |   |   |   |--- Stock[57]::Feature_3 <= -1.07\n|   |   |   |   |   |--- value: [0.05]\n|   |   |   |   |--- Stock[57]::Feature_3 >  -1.07\n|   |   |   |   |   |--- value: [0.02]\n|   |   |   |--- Reversal[67,11] >  0.50\n|   |   |   |   |--- value: [0.10]\n|   |   |--- Stock[13]::Feature_2 >  -0.95\n|   |   |   |--- Stock[71]::Feature_1 <= -0.79\n|   |   |   |   |--- value: [0.08]\n|   |   |   |--- Stock[71]::Feature_1 >  -0.79\n|   |   |   |   |--- Stock[74]::Feature_1 <= -0.72\n|   |   |   |   |   |--- value: [0.07]\n|   |   |   |   |--- Stock[74]::Feature_1 >  -0.72\n|   |   |   |   |   |--- value: [0.01]\n|   |--- Stock[72]::Feature_5 >  3.38\n|   |   |--- Momentum[19,71] <= 0.50\n|   |   |   |--- value: [0.05]\n|   |   |--- Momentum[19,71] >  0.50\n|   |   |   |--- value: [0.10]\n"
+      },
+      "51": {
+        "ticker": "MRF.NS",
+        "avg_weight": 0.013819698244333267,
+        "r2": 0.4739396357836416,
+        "feature_importances": {
+          "Stock[51]::Feature_5": 0.32739161192770344,
+          "Stock[3]::Feature_3": 0.1372326494291686,
+          "Stock[94]::Feature_2": 0.13436571547789466,
+          "Stock[21]::Feature_0": 0.1046005464981085,
+          "Stock[95]::Feature_1": 0.10413062652591337,
+          "Stock[2]::Feature_5": 0.09726849274834261,
+          "Stock[0]::Feature_5": 0.09501035739286894
+        },
+        "rules": "|--- Stock[51]::Feature_5 <= 1.61\n|   |--- Stock[3]::Feature_3 <= -1.18\n|   |   |--- Stock[94]::Feature_2 <= -0.21\n|   |   |   |--- value: [0.01]\n|   |   |--- Stock[94]::Feature_2 >  -0.21\n|   |   |   |--- value: [0.11]\n|   |--- Stock[3]::Feature_3 >  -1.18\n|   |   |--- Stock[21]::Feature_0 <= 0.95\n|   |   |   |--- Stock[95]::Feature_1 <= -0.99\n|   |   |   |   |--- Stock[2]::Feature_5 <= -0.53\n|   |   |   |   |   |--- value: [0.01]\n|   |   |   |   |--- Stock[2]::Feature_5 >  -0.53\n|   |   |   |   |   |--- value: [0.05]\n|   |   |   |--- Stock[95]::Feature_1 >  -0.99\n|   |   |   |   |--- Stock[0]::Feature_5 <= 3.40\n|   |   |   |   |   |--- value: [0.01]\n|   |   |   |   |--- Stock[0]::Feature_5 >  3.40\n|   |   |   |   |   |--- value: [0.07]\n|   |   |--- Stock[21]::Feature_0 >  0.95\n|   |   |   |--- value: [0.07]\n|--- Stock[51]::Feature_5 >  1.61\n|   |--- value: [0.12]\n"
+      },
+      "65": {
+        "ticker": "COFORGE.NS",
+        "avg_weight": 0.013780457898974419,
+        "r2": 0.6942768472640709,
+        "feature_importances": {
+          "Stock[35]::Feature_3": 0.35722044134219116,
+          "Stock[38]::Feature_0": 0.1331015143412577,
+          "Stock[88]::Feature_2": 0.11114277482285462,
+          "Stock[71]::Feature_4": 0.11079274926011717,
+          "Stock[25]::Feature_2": 0.09939669433508273,
+          "Stock[80]::Feature_0": 0.06726002029611014,
+          "Stock[85]::Feature_5": 0.0565826275214438,
+          "Stock[47]::Feature_5": 0.0543024022626017,
+          "Stock[4]::Feature_5": 0.010200775818340835
+        },
+        "rules": "|--- Stock[35]::Feature_3 <= -0.63\n|   |--- value: [0.14]\n|--- Stock[35]::Feature_3 >  -0.63\n|   |--- Stock[38]::Feature_0 <= 2.87\n|   |   |--- Stock[88]::Feature_2 <= 0.20\n|   |   |   |--- Stock[80]::Feature_0 <= 6.81\n|   |   |   |   |--- Stock[85]::Feature_5 <= 3.84\n|   |   |   |   |   |--- value: [0.01]\n|   |   |   |   |--- Stock[85]::Feature_5 >  3.84\n|   |   |   |   |   |--- value: [0.05]\n|   |   |   |--- Stock[80]::Feature_0 >  6.81\n|   |   |   |   |--- Stock[25]::Feature_2 <= 3.34\n|   |   |   |   |   |--- value: [0.01]\n|   |   |   |   |--- Stock[25]::Feature_2 >  3.34\n|   |   |   |   |   |--- value: [0.05]\n|   |   |--- Stock[88]::Feature_2 >  0.20\n|   |   |   |--- Stock[71]::Feature_4 <= 0.12\n|   |   |   |   |--- Stock[4]::Feature_5 <= -0.41\n|   |   |   |   |   |--- value: [0.07]\n|   |   |   |   |--- Stock[4]::Feature_5 >  -0.41\n|   |   |   |   |   |--- value: [0.05]\n|   |   |   |--- Stock[71]::Feature_4 >  0.12\n|   |   |   |   |--- Stock[47]::Feature_5 <= 0.48\n|   |   |   |   |   |--- value: [0.01]\n|   |   |   |   |--- Stock[47]::Feature_5 >  0.48\n|   |   |   |   |   |--- value: [0.05]\n|   |--- Stock[38]::Feature_0 >  2.87\n|   |   |--- value: [0.09]\n"
+      }
+    },
+    "avg_weights": [
+      0.01053907535970211,
+      0.009114262647926807,
+      0.008518912829458714,
+      0.016092514619231224,
+      0.009158700704574585,
+      0.007477551233023405,
+      0.010227051563560963,
+      0.011471927165985107,
+      0.013699679635465145,
+      0.009575245901942253,
+      0.01230227667838335,
+      0.011591249145567417,
+      0.0066291517578065395,
+      0.008611833676695824,
+      0.00975417997688055,
+      0.009900406002998352,
+      0.01327264029532671,
+      0.015290791168808937,
+      0.00975420419126749,
+      0.006592626217752695,
+      0.0080864941701293,
+      0.007108237128704786,
+      0.010635023936629295,
+      0.010493329726159573,
+      0.008584006689488888,
+      0.012478074990212917,
+      0.011285579763352871,
+      0.0054503390565514565,
+      0.012713021598756313,
+      0.013723701238632202,
+      0.013903867453336716,
+      0.014623449184000492,
+      0.009076008573174477,
+      0.008865300565958023,
+      0.007890627719461918,
+      0.006041999440640211,
+      0.011184310540556908,
+      0.015053226612508297,
+      0.014732008799910545,
+      0.00931301899254322,
+      0.009158461354672909,
+      0.012440579012036324,
+      0.009270058013498783,
+      0.01375606656074524,
+      0.01640576310455799,
+      0.011720756068825722,
+      0.010511995293200016,
+      0.01101120375096798,
+      0.013355323113501072,
+      0.013056861236691475,
+      0.008062339387834072,
+      0.013819698244333267,
+      0.007154610473662615,
+      0.006243512500077486,
+      0.008224498480558395,
+      0.014310570433735847,
+      0.011088509112596512,
+      0.008217435330152512,
+      0.00850630085915327,
+      0.011171887628734112,
+      0.007268757093697786,
+      0.011207276955246925,
+      0.009847414679825306,
+      0.01049105729907751,
+      0.009072442539036274,
+      0.013780457898974419,
+      0.006759131792932749,
+      0.008902798406779766,
+      0.00942312367260456,
+      0.011470855213701725,
+      0.011029445566236973,
+      0.006072698626667261,
+      0.011171752586960793,
+      0.007480875588953495,
+      0.008624117821455002,
+      0.00543639762327075,
+      0.007520862389355898,
+      0.007792078889906406,
+      0.009025962091982365,
+      0.012256097048521042,
+      0.013288808986544609,
+      0.010358599945902824,
+      0.010190221481025219,
+      0.009300023317337036,
+      0.00992545671761036,
+      0.008591536432504654,
+      0.012672539800405502,
+      0.00576441315934062,
+      0.01246841624379158,
+      0.011566316708922386,
+      0.011997449211776257,
+      0.007987545803189278,
+      0.011988763697445393,
+      0.009405828081071377,
+      0.00960965920239687,
+      0.012896990403532982,
+      0.009051489643752575
+    ],
+    "top_indices": [
+      44,
+      3,
+      17,
+      37,
+      38,
+      31,
+      55,
+      30,
+      51,
+      65
+    ],
+    "global_r2": 0.05269363976602242,
+    "X_shape": [
+      240,
+      28809
+    ],
+    "Y_shape": [
+      240,
+      97
+    ]
+  }
+}

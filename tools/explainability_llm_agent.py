@@ -171,6 +171,7 @@ def assemble_prompt(ctx: SnapshotContext) -> str:
         "example_output": example_block,
         "explainability_data": ctx.filtered_data,
     }
+    print(payload)
 
     return json.dumps(convert_keys_to_str(payload), indent=2, default=safe_convert)
 
