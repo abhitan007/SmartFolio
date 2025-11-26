@@ -466,8 +466,14 @@ def train_model_and_predict(model, args, train_loader, val_loader, test_loader):
     print("\n" + "=" * 70)
     print("Using Hybrid Ensemble Expert Generation")
     print("=" * 70)
-    profile = getattr(args, "risk_profile", None)
-    risk_score_value = profile.get("risk_score", getattr(args, "risk_score", 0.5)) if profile else getattr(args, "risk_score", 0.5)
+    profile = getattr(args, "risk_profile", {})
+    risk_score_value = profile.get("risk_score", getattr(args, "risk_score", 0.5))
+    
+    print(f"\nRisk Profile Configuration:")
+    print(f"  Risk Score: {risk_score_value:.3f}")
+    print(f"  Max Weight: {profile.get('max_weight', 0.3):.3f}")
+    print(f"  Min Weight: {profile.get('min_weight_floor', 0.01):.4f}")
+    print(f"{'='*70}\n")
     cache_file = resolve_expert_cache_path(args, risk_score_value)
     expert_trajectories = None
     if cache_file and os.path.exists(cache_file):
@@ -537,7 +543,7 @@ def train_model_and_predict(model, args, train_loader, val_loader, test_loader):
                 ind=ind, pos=pos, neg=neg,
                 returns=labels, pyg_data=pyg_data, reward_net=reward_net, device=args.device,
                 ind_yn=args.ind_yn, pos_yn=args.pos_yn, neg_yn=args.neg_yn,
-                risk_profile=getattr(args, 'risk_profile', None)
+                risk_profile=profile
             )
             env_train.seed(seed=args.seed)
             env_train, _ = env_train.get_sb_env()

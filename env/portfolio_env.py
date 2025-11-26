@@ -10,7 +10,52 @@ class StockPortfolioEnv(gym.Env):
                  ind=None, pos=None, neg=None, returns=None, pyg_data=None,
                  benchmark_return=None, mode="train", reward_net=None, device='cuda:0',
                  ind_yn=False, pos_yn=False, neg_yn=False, risk_profile=None):
+        
         super(StockPortfolioEnv, self).__init__()
+        if risk_profile is None:
+            print(f"\n⚠ CRITICAL ERROR: risk_profile is None in StockPortfolioEnv!")
+            print(f"  This means risk_profile was not passed from create_env_init()")
+            print(f"  Checking args.risk_profile...")
+            risk_profile = getattr(args, 'risk_profile', None)
+            
+            if risk_profile is None:
+                print(f"⚠ CRITICAL ERROR: args.risk_profile is also None!")
+                print(f"  Risk profile must be loaded in main.py before calling train_predict()")
+                raise ValueError("risk_profile not initialized - check main.py load_user_risk_score()")
+        
+        if not isinstance(risk_profile, dict):
+            print(f"⚠ ERROR: risk_profile is {type(risk_profile)}, not dict!")
+            raise TypeError(f"risk_profile must be dict, got {type(risk_profile)}")
+        
+        self.risk_profile = risk_profile
+        try:
+            self.risk_score = float(risk_profile['risk_score'])
+        except KeyError:
+            print(f"\n⚠ CRITICAL ERROR: 'risk_score' not in risk_profile!")
+            print(f"  risk_profile keys: {list(risk_profile.keys())}")
+            print(f"  risk_profile content: {risk_profile}")
+            raise KeyError("'risk_score' missing from risk_profile")
+        
+        try:
+            self.max_weight_cap = float(risk_profile['max_weight'])
+        except KeyError:
+            print(f"\n⚠ CRITICAL ERROR: 'max_weight' not in risk_profile!")
+            print(f"  risk_profile keys: {list(risk_profile.keys())}")
+            raise KeyError("'max_weight' missing from risk_profile")
+        
+        try:
+            self.min_weight_floor = float(risk_profile['min_weight_floor'])
+        except KeyError:
+            print(f"\n⚠ CRITICAL ERROR: 'min_weight_floor' not in risk_profile!")
+            print(f"  risk_profile keys: {list(risk_profile.keys())}")
+            raise KeyError("'min_weight_floor' missing from risk_profile")
+        
+        try:
+            self.action_temperature = float(risk_profile['action_temperature'])
+        except KeyError:
+            print(f"\n⚠ ERROR: 'action_temperature' not in risk_profile!")
+            print(f"  Using computed default: 1.0 + (1.0 - risk_score)")
+            self.action_temperature = 1.0 + (1.0 - self.risk_score)
         self.current_step = 0
         self.max_step = returns.shape[0] - 1
         self.done = False
@@ -38,9 +83,6 @@ class StockPortfolioEnv(gym.Env):
         self.pos_yn = pos_yn
         self.neg_yn = neg_yn
         self.risk_profile = risk_profile or {}
-        self.risk_score = float(self.risk_profile.get('risk_score', getattr(args, 'risk_score', 0.5)))
-        self.max_weight_cap = self.risk_profile.get('max_weight', None)
-        self.min_weight_floor = self.risk_profile.get('min_weight', 0.0)
         # Conservative users (low score) get higher temperature to spread allocations
         self.action_temperature = max(1e-3, 1.0 + (1.0 - self.risk_score))
 
@@ -209,17 +251,18 @@ class StockPortfolioEnv(gym.Env):
         return self.observation, self.reward, self.done, {}
 
     def _apply_risk_constraints(self, weights):
-        """Apply simple weight caps/floors derived from the risk profile."""
-        if self.max_weight_cap is not None and self.max_weight_cap > 0:
-            clipped = np.minimum(weights, self.max_weight_cap)
-            # Optional floor to avoid zeroing everything for aggressive users
-            if self.min_weight_floor > 0:
-                clipped = np.maximum(clipped, self.min_weight_floor)
-            total = clipped.sum()
-            if total > 1e-8:
-                return clipped / total
+        """Apply weight caps and floors from risk profile."""
+        clipped = np.minimum(weights, self.max_weight_cap)
+        
+        if self.min_weight_floor > 0:
+            mask = clipped > 1e-6
+            clipped[mask] = np.maximum(clipped[mask], self.min_weight_floor)
+        
+        total = clipped.sum()
+        if total > 1e-8:
+            return clipped / total
+        else:
             return np.ones_like(weights) / len(weights)
-        return weights
 
     def get_sb_env(self):
         e = DummyVecEnv([lambda: self])

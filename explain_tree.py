@@ -170,10 +170,10 @@ def main():
     parser.add_argument('--stock-index', type=int, default=0, help='Which stock to explain')
     parser.add_argument('--top-k-stocks', type=int, default=5, help='Number of top stocks to explain')
     parser.add_argument('--device', default='cpu', help='Device for data loading')
-    parser.add_argument('--risk-score', type=float, default=0.5, help='User risk score for env constraints')
+    
     args = parser.parse_args()
     args.market = 'custom'
-    
+    parser.add_argument('--risk-score', type=float, default=None, help='User risk score (auto-loaded from artifacts if not provided)')
     # Auto-detect num_stocks and input_dim (matching main.py)
     data_dir = f'dataset_default/data_train_predict_{args.market}/{args.horizon}_{args.relation_type}/'
     sample_files_detect = [f for f in os.listdir(data_dir) if f.endswith('.pkl')]
@@ -202,8 +202,12 @@ def main():
     args.ind_yn = True
     args.pos_yn = True
     args.neg_yn = True
-    args.risk_score = getattr(args, 'risk_score', 0.5)
-    args.risk_profile = build_risk_profile(args.risk_score)
+    args.risk_score = getattr(args, 'risk_score', None)
+    if args.risk_score is None:
+        print(f"⚠  ERROR: risk_score not set!")
+        print(f"  This should be loaded from risk_cli artifacts in main.py")
+        print(f"  Proceeding with None - this may cause errors")
+    
     
     print(f"\nConfiguration:")
     print(f"  Market: {args.market}")

@@ -15,8 +15,8 @@ from policy.policy import *
 from stable_baselines3 import PPO
 from trainer.irl_trainer import *
 from torch_geometric.loader import DataLoader
-from utils.risk_profile import build_risk_profile
-
+from utils.risk_profile import build_risk_profile, get_risk_profile_description
+from risk_cli import load_deployment_pipeline, run_offline_inference
 PATH_DATA = f'./dataset/'
 
 
@@ -183,6 +183,19 @@ def fine_tune_month(args, manifest_path="monthly_manifest.json", bookkeeping_pat
     return out_path
 
 def train_predict(args, predict_dt):
+    
+    
+    print(f"{'='*70}")
+    print(f"PORTFOLIO CONSTRAINTS FROM RISK SCORE")
+    print(f"{'='*70}")
+    print(f"Risk Score (normalized): {args.risk_score:.3f}")
+    print(f"Risk Description: {get_risk_profile_description(args.risk_score)}")
+    print(f"\nPortfolio Constraints:")
+    print(f"  Max Weight Cap: {args.risk_profile['max_weight']:.3f} ({args.risk_profile['max_weight']*100:.1f}% per stock)")
+    print(f"  Min Weight Floor: {args.risk_profile['min_weight_floor']:.4f} ({args.risk_profile['min_weight_floor']*100:.2f}% minimum)")
+    print(f"  Action Temperature: {args.risk_profile['action_temperature']:.3f}")
+    print(f"  Target Positions: {args.risk_profile['target_num_positions']}")
+    print(f"{'='*70}\n")
     os.environ["CUDA_VISIBLE_DEVICES"] = str(args.device)
     data_dir = f'dataset_default/data_train_predict_{args.market}/{args.horizon}_{args.relation_type}/'
     train_dataset = AllGraphDataSampler(base_dir=data_dir, date=True,
@@ -236,8 +249,103 @@ def train_predict(args, predict_dt):
     train_model_and_predict(model, args, train_loader, val_loader, test_loader)
 
 
+def load_user_risk_score(artifact_dir: str = './risk_artifacts', user_data: dict = None) -> tuple:
+    """
+    Load risk score from risk_cli artifacts with proper normalization.
+    
+    ACTUAL RANGES from artifacts:
+    - Conservative: 0-20
+    - Moderate: 35-65
+    - Aggressive: 70-100
+    
+    Returns:
+        (risk_score_normalized: float [0-1], metadata: dict)
+        
+    Raises:
+        ValueError: If user_data is None (must be provided)
+        FileNotFoundError: If artifacts not found
+    """
+    artifact_dir = os.path.abspath(artifact_dir)
+    
+    # ===== FAIL IF ARTIFACTS NOT FOUND =====
+    if not os.path.isdir(artifact_dir):
+        print(f"\n⚠ CRITICAL ERROR: Risk artifacts not found!")
+        print(f"  Expected path: {artifact_dir}")
+        print(f"  Solution: Run 'python risk_cli.py' first")
+        raise FileNotFoundError(f"Risk artifacts not found at {artifact_dir}")
+    
+    # ===== FAIL IF NO USER DATA PROVIDED =====
+    if user_data is None:
+        print(f"\n⚠ CRITICAL ERROR: user_data is None!")
+        print(f"  You MUST provide user risk data.")
+        print(f"  Options:")
+        print(f"    1. Create JSON file with user data: python main.py --user_risk_json user_profile.json")
+        print(f"    2. Pass via code: modify main.py to provide user_data dict")
+        raise ValueError("user_data must be provided - cannot use defaults")
+    
+    print(f"\n{'='*70}")
+    print(f"LOADING RISK SCORE FROM ARTIFACTS (risk_cli)")
+    print(f"{'='*70}")
+    print(f"Artifact Directory: {artifact_dir}\n")
+    
+    # Load deployment pipeline
+    scorer, offline_kmeans, cluster_context = load_deployment_pipeline(artifact_dir)
+    
+    print(f"Using CUSTOM user data provided")
+    print(f"User Profile:")
+    for key, value in user_data.items():
+        print(f"  {key}: {value}")
+    
+    # Score the user with both offline and online methods
+    print(f"\nScoring user with risk_cli...")
+    offline_result = run_offline_inference(user_data, scorer, offline_kmeans, cluster_context)
+    online_result = scorer.predict_and_update(user_data, update=False)
+    
+    # Use online result (includes drift detection)
+    risk_score_raw = online_result['risk_score']  # This is 0-100
+    risk_label = online_result['risk_label']
+    cluster_id = online_result['cluster_id']
+    
+    # ===== CRITICAL: Normalize from [0-100] to [0-1] =====
+    # risk_ranges from artifacts: Conservative: 0-20, Moderate: 35-65, Aggressive: 70-100
+    risk_score_normalized = risk_score_raw / 100.0  # Convert 0-100 → 0-1
+    risk_score_normalized = max(0.0, min(1.0, risk_score_normalized))  # Clamp to [0, 1]
+    
+    print(f"\n✓ RISK SCORE LOADED FROM ARTIFACTS")
+    print(f"  Raw Score (0-100): {risk_score_raw:.2f}")
+    print(f"  Normalized Score (0-1): {risk_score_normalized:.3f}")
+    print(f"  Risk Label: {risk_label}")
+    print(f"  Cluster ID: {cluster_id}")
+    
+    # Print optional fields if they exist
+    if 'distance' in online_result:
+        print(f"  Distance to Centroid: {online_result['distance']:.4f}")
+    if 'reconstruction_error' in online_result:
+        print(f"  Reconstruction Error: {online_result['reconstruction_error']:.4f}")
+    if 'drift_detected' in online_result:
+        print(f"  Drift Detected: {online_result['drift_detected']}")
+    
+    print(f"{'='*70}\n")
+    
+    metadata = {
+        "risk_label": risk_label,
+        "cluster_id": int(cluster_id) if cluster_id is not None else -1,
+        "raw_score": float(risk_score_raw),
+        "normalized_score": float(risk_score_normalized),
+    }
+    
+    # Add optional fields if they exist
+    if 'distance' in online_result:
+        metadata['distance'] = float(online_result['distance'])
+    if 'reconstruction_error' in online_result:
+        metadata['reconstruction_error'] = float(online_result['reconstruction_error'])
+    if 'drift_detected' in online_result:
+        metadata['drift_detected'] = bool(online_result['drift_detected'])
+    
+    return risk_score_normalized, metadata
+
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Transaction ..")
+    parser = argparse.ArgumentParser(description="SmartFolio: Risk-Aware Portfolio Optimization")
     parser.add_argument("-device", "-d", default="cuda:0", help="gpu")
     parser.add_argument("-model_name", "-nm", default="SmartFolio", help="Model name used in checkpoints and logs")
     parser.add_argument("-horizon", "-hrz", default="1", help="Return prediction horizon in trading days")
@@ -247,7 +355,9 @@ if __name__ == '__main__':
     parser.add_argument("-neg_yn", "-neg", default="y", help="Enable reversal relation graph")
     parser.add_argument("-multi_reward_yn", "-mr", default="y", help="Enable multi-reward IRL head")
     parser.add_argument("-policy", "-p", default="MLP", help="Policy architecture identifier")
-    # continual learning / resume
+    parser.add_argument("--artifact_dir", default="./risk_artifacts", help="Path to risk artifacts")
+    parser.add_argument("--user_risk_json", required=True, help="[REQUIRED] Path to user risk data JSON file")
+    parser.add_argument("--risk_score_override", type=float, default=None, help="Override risk score (0=conservative, 1=aggressive)")
     parser.add_argument("--resume_model_path", default=None, help="Path to previously saved PPO model to resume from")
     parser.add_argument("--reward_net_path", default=None, help="Path to saved IRL reward network state_dict to resume from")
     parser.add_argument("--fine_tune_steps", type=int, default=5000, help="Timesteps for monthly fine-tuning when resuming")
@@ -262,17 +372,31 @@ if __name__ == '__main__':
                         help="Run monthly fine-tuning using the manifest instead of full training")
     parser.add_argument("--expert_cache_path", default=None,
                         help="Optional path to cache expert trajectories for reuse")
-    # Training hyperparameters
     parser.add_argument("--irl_epochs", type=int, default=50, help="Number of IRL training epochs")
     parser.add_argument("--rl_timesteps", type=int, default=10000, help="Number of RL timesteps for training")
-    # Risk-adaptive reward parameters
-    parser.add_argument("--risk_score", type=float, default=0.5, help="User risk score: 0=conservative, 1=aggressive")
     parser.add_argument("--dd_base_weight", type=float, default=1.0, help="Base weight for drawdown penalty")
     parser.add_argument("--dd_risk_factor", type=float, default=1.0, help="Risk factor k in β_dd(ρ) = β_base*(1+k*(1-ρ))")
+    
     args = parser.parse_args()
+    
+    # ===== STEP 1: Load user risk data - REQUIRED =====
+    if not args.user_risk_json or not os.path.exists(args.user_risk_json):
+        print(f"\n⚠ CRITICAL ERROR: user_risk_json not found!")
+        print(f"  Required argument: --user_risk_json /path/to/user_data.json")
+        print(f"\nExample usage:")
+        print(f"  python main.py \\")
+        print(f"    --user_risk_json user_profile.json \\")
+        print(f"    -policy HGAT \\")
+        print(f"    --irl_epochs 5 \\")
+        print(f"    --rl_timesteps 100")
+        raise ValueError("--user_risk_json is REQUIRED")
+    
+    with open(args.user_risk_json, 'r') as f:
+        args.user_risk_data = json.load(f)
+    print(f"\n[✓] Loaded user risk data from {args.user_risk_json}")
+    
+    # ===== STEP 2: Set default values =====
     args.market = 'custom'
-
-    # Default training range (override via CLI if desired)
     args.device = "cuda:0" if torch.cuda.is_available() else "cpu"
     args.model_name = 'SmartFolio'
     args.relation_type = 'hy'
@@ -285,89 +409,109 @@ if __name__ == '__main__':
     args.batch_size = 32
     args.max_epochs = 1
     args.seed = 123
-    # Auto-detect input_dim (number of per-stock features) from a sample file
+    args.ind_yn = True
+    args.pos_yn = True
+    args.neg_yn = True
+    args.multi_reward = True
+    
+    # ===== STEP 3: Auto-detect input_dim =====
     try:
         data_dir_detect = f'dataset_default/data_train_predict_{args.market}/{args.horizon}_{args.relation_type}/'
         sample_files_detect = [f for f in os.listdir(data_dir_detect) if f.endswith('.pkl')]
         if sample_files_detect:
             import pickle
-            sample_path_detect = os.path.join(data_dir_detect, sample_files_detect[0])
+            sample_path_detect = os.path.join(data_dir_detect, sample_files_detect[50])
             with open(sample_path_detect, 'rb') as f:
                 sample_data_detect = pickle.load(f)
-            # Expect features shaped [T, num_stocks, input_dim]
             feats = sample_data_detect.get('features')
             if feats is not None:
-                # Handle both torch tensors and numpy arrays
                 try:
                     shape = feats.shape
                 except Exception:
-                    # If it's a torch tensor wrapped differently
                     try:
                         shape = feats.size()
                     except Exception:
                         shape = None
                 if shape and len(shape) >= 2:
                     args.input_dim = shape[-1]
-                    print(f"Auto-detected input_dim: {args.input_dim}")
+                    print(f"[✓] Auto-detected input_dim: {args.input_dim}")
                 else:
-                    print("Warning: could not determine input_dim from sample; falling back to 6")
                     args.input_dim = 6
             else:
-                print("Warning: 'features' not found in sample; falling back to input_dim=6")
                 args.input_dim = 6
         else:
-            print(f"Warning: No sample files found in {data_dir_detect}; falling back to input_dim=6")
             args.input_dim = 6
     except Exception as e:
-        print(f"Warning: input_dim auto-detection failed ({e}); falling back to 6")
+        print(f"[!] Warning: input_dim auto-detection failed ({e}); using 6")
         args.input_dim = 6
-    args.ind_yn = True
-    args.pos_yn = True
-    args.neg_yn = True
-    args.multi_reward = True
-    # Training hyperparameters (can be overridden via command line)
-    args.irl_epochs = getattr(args, 'irl_epochs', 50)
-    args.rl_timesteps = getattr(args, 'rl_timesteps', 10000)
-    # Risk-adaptive reward parameters
-    args.risk_score = getattr(args, 'risk_score', 0.5)
-    args.dd_base_weight = getattr(args, 'dd_base_weight', 1.0)
-    args.dd_risk_factor = getattr(args, 'dd_risk_factor', 1.0)
-    args.risk_profile = build_risk_profile(args.risk_score)
-    if not getattr(args, "expert_cache_path", None):
-        args.expert_cache_path = os.path.join(
-            "dataset_default",
-            "expert_cache"
-        )
-    # ensure save dir
-    os.makedirs(args.save_dir, exist_ok=True)
-
-    # Auto-detect num_stocks from a sample pickle file
+    
+    # ===== STEP 4: Auto-detect num_stocks =====
     data_dir = f'dataset_default/data_train_predict_{args.market}/{args.horizon}_{args.relation_type}/'
     sample_files = [f for f in os.listdir(data_dir) if f.endswith('.pkl')]
     if sample_files:
         import pickle
-        sample_path = os.path.join(data_dir, sample_files[0])
+        sample_path = os.path.join(data_dir, sample_files[50])
         with open(sample_path, 'rb') as f:
             sample_data = pickle.load(f)
-        # features shape is [num_stocks, feature_dim], so use shape[0]
         args.num_stocks = sample_data['features'].shape[0]
-        print(f"Auto-detected num_stocks for custom market: {args.num_stocks}")
+        print(f"[✓] Auto-detected num_stocks: {args.num_stocks}")
     else:
         raise ValueError(f"No pickle files found in {data_dir} to determine num_stocks")
-    print("market:", args.market, "num_stocks:", args.num_stocks)
+    
+    print(f"Market: {args.market}, Num Stocks: {args.num_stocks}")
+    
+    # ===== STEP 5: LOAD RISK SCORE FROM ARTIFACTS WITH USER DATA =====
+    user_risk_data = args.user_risk_data
+    risk_score_normalized, risk_metadata = load_user_risk_score(
+        artifact_dir=getattr(args, 'artifact_dir', './risk_artifacts'),
+        user_data=user_risk_data
+    )
+    
+    args.risk_score = risk_score_normalized
+    args.risk_metadata = risk_metadata
+    
+    # ===== STEP 6: BUILD RISK PROFILE FROM LOADED SCORE =====
+    print("\n" + "="*70)
+    print("BUILDING RISK PROFILE FROM LOADED SCORE")
+    print("="*70)
+    args.risk_profile = build_risk_profile(args.risk_score)
+    
+    print(f"\nRisk Profile Summary:")
+    print(f"  Risk Score: {args.risk_profile['risk_score']:.3f}")
+    print(f"  Max Weight: {args.risk_profile['max_weight']:.3f} ({args.risk_profile['max_weight']*100:.1f}%)")
+    print(f"  Min Weight Floor: {args.risk_profile['min_weight_floor']:.4f} ({args.risk_profile['min_weight_floor']*100:.2f}%)")
+    print(f"  Action Temperature: {args.risk_profile['action_temperature']:.3f}")
+    print(f"  Target Positions: {args.risk_profile['target_num_positions']}")
+    print(f"{'='*70}\n")
+    
+    # ===== STEP 7: Set remaining defaults =====
+    args.irl_epochs = getattr(args, 'irl_epochs', 50)
+    args.rl_timesteps = getattr(args, 'rl_timesteps', 10000)
+    args.dd_base_weight = getattr(args, 'dd_base_weight', 1.0)
+    args.dd_risk_factor = getattr(args, 'dd_risk_factor', 1.0)
+    
+    if not getattr(args, "expert_cache_path", None):
+        args.expert_cache_path = os.path.join("dataset_default", "expert_cache")
+    
+    os.makedirs(args.save_dir, exist_ok=True)
+    
+    # ===== STEP 8: Run training =====
     if args.run_monthly_fine_tune:
         checkpoint = fine_tune_month(args, manifest_path="dataset_default/data_train_predict_custom/1_corr/monthly_manifest.json")
-        print(f"Monthly fine-tuning complete. Checkpoint: {checkpoint}")
+        print(f"\n[✓] Monthly fine-tuning complete. Checkpoint: {checkpoint}")
     else:
         trained_model = train_predict(args, predict_dt='2024-12-30')
-        # save PPO model checkpoint
         try:
             ts = time.strftime('%Y%m%d_%H%M%S')
             out_path = os.path.join(args.save_dir, f"ppo_{args.policy.lower()}_{args.market}_{ts}")
-            # train_predict currently returns None; saving env-attached model is handled inside trainer
-            # If we had a handle, we could save here. Keep path ready for future.
-            print(f"Training run complete. To save PPO model, call model.save('{out_path}') where model is your PPO instance.")
+            print(f"\n[✓] Training run complete.")
+            print(f"    Model checkpoint ready at: {out_path}")
         except Exception as e:
-            print(f"Skip saving PPO model here: {e}")
+            print(f"[!] Note: {e}")
 
-        print(1)
+
+
+
+
+
+
