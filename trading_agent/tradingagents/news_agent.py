@@ -629,26 +629,54 @@ def _build_opinion(weight: float, articles: List[NewsArticle]) -> Tuple[str, Lis
     negatives = [a for a in articles if a.sentiment_score < 0]
     net_score = sum(a.sentiment_score for a in articles)
 
-    judgement = _compose_weight_statement(weight, net_score, len(positives), len(negatives))
+    stance = _news_stance(net_score, len(positives), len(negatives), len(articles))
+    weight_pct = weight * 100.0
+
+    key_positive = positives[0] if positives else None
+    key_negative = negatives[0] if negatives else None
+
+    if stance == "support":
+        anchor = _headline_snippet(key_positive or positives[:1] or articles[:1])
+        judgement = (
+            f"Maintain the {weight_pct:.1f}% allocation; upbeat coverage such as {anchor} reinforces the weight."
+        )
+    elif stance == "caution":
+        anchor = _headline_snippet(key_negative or negatives[:1] or articles[:1])
+        judgement = (
+            f"Trim or closely monitor the {weight_pct:.1f}% allocation because bearish news like {anchor} challenges the position."
+        )
+    else:
+        anchor = _headline_snippet(key_positive or key_negative or articles[:1])
+        judgement = (
+            f"Keep the {weight_pct:.1f}% allocation but note mixed coverage; {anchor} is the most material headline in the window."
+        )
 
     supporting: List[str] = []
     coverage_summary = _coverage_summary(len(positives), len(negatives), len(articles))
     supporting.append(coverage_summary)
 
-    for article in _top_articles(positives, negatives):
+    for idx, article in enumerate(_top_articles(positives, negatives)):
         tone = "positive" if article.sentiment_score > 0 else "negative"
-        source = article.source or "vendor"
-        date_str = article.published_at or "recent"
-        supporting.append(
-            f"{tone.title()} headline from {source} ({date_str}): {article.headline}"
-        )
+        snippet = _headline_snippet(article)
+        if tone == "positive":
+            supporting.append(
+                f"Positive driver: {snippet} — supports holding {weight_pct:.1f}% exposure."
+            )
+        else:
+            supporting.append(
+                f"Risk flag: {snippet} — consider hedging part of the {weight_pct:.1f}% weight."
+            )
         if len(supporting) >= 3:
             break
 
     if len(supporting) < 3 and not negatives and positives:
-        supporting.append("Coverage skewed positive during the window with no negative headlines captured.")
+        supporting.append(
+            "Coverage skewed positive during the window with no headline-level risks identified."
+        )
     if len(supporting) < 3 and not positives and negatives:
-        supporting.append("Coverage skewed negative during the window with no offsetting positive headlines.")
+        supporting.append(
+            "Coverage skewed negative during the window with no offsetting positive headlines."
+        )
 
     return judgement, supporting
 
@@ -667,6 +695,30 @@ def _coverage_summary(pos_count: int, neg_count: int, total: int) -> str:
     return (
         f"News tone snapshot: {pos_count} positive, {neg_count} negative, {neutral_count} neutral items in the sample."
     )
+
+
+def _headline_snippet(article_or_list: Any) -> str:
+    if isinstance(article_or_list, list):
+        target = article_or_list[0] if article_or_list else None
+    else:
+        target = article_or_list
+    if not isinstance(target, NewsArticle):
+        return "recent coverage"
+    date_str = target.published_at.split("T")[0] if target.published_at else "recent"
+    source = target.source or "press"
+    return f"{source} on {date_str}: '{target.headline}'"
+
+
+def _news_stance(net_score: int, pos_count: int, neg_count: int, total: int) -> str:
+    if total == 0:
+        return "mixed"
+    pos_ratio = pos_count / total
+    neg_ratio = neg_count / total
+    if net_score >= 1 and pos_ratio >= 0.5:
+        return "support"
+    if net_score <= -1 and neg_ratio >= 0.4:
+        return "caution"
+    return "mixed"
 
 
 def _articles_prompt_digest(articles: List[NewsArticle]) -> str:

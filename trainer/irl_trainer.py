@@ -481,7 +481,7 @@ def train_model_and_predict(model, args, train_loader, val_loader, test_loader):
         expert_trajectories = generate_expert_trajectories(
             args,
             train_loader.dataset,
-            num_trajectories=500,
+            num_trajectories=100,
             risk_profile=profile,
         )
         if cache_file:

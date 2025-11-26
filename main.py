@@ -265,12 +265,21 @@ if __name__ == '__main__':
     # Training hyperparameters
     parser.add_argument("--irl_epochs", type=int, default=50, help="Number of IRL training epochs")
     parser.add_argument("--rl_timesteps", type=int, default=10000, help="Number of RL timesteps for training")
+    parser.add_argument(
+        "--disable-tensorboard",
+        action="store_true",
+        help="Skip configuring TensorBoard logging to avoid importing the optional dependency.",
+    )
     # Risk-adaptive reward parameters
     parser.add_argument("--risk_score", type=float, default=0.5, help="User risk score: 0=conservative, 1=aggressive")
     parser.add_argument("--dd_base_weight", type=float, default=1.0, help="Base weight for drawdown penalty")
     parser.add_argument("--dd_risk_factor", type=float, default=1.0, help="Risk factor k in β_dd(ρ) = β_base*(1+k*(1-ρ))")
     args = parser.parse_args()
     args.market = 'custom'
+
+    if getattr(args, "disable_tensorboard", False):
+        PPO_PARAMS["tensorboard_log"] = None
+        print("TensorBoard logging disabled (--disable-tensorboard); PPO will not attempt to import tensorboard.")
 
     # Default training range (override via CLI if desired)
     args.device = "cuda:0" if torch.cuda.is_available() else "cpu"
